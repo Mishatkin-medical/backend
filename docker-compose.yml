@@ -1,0 +1,188 @@
+﻿services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mishatkin-postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: mishatkin
+      POSTGRES_USER: mishatkin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mishatkin}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mishatkin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mishatkin-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-mishatkin} --appendonly yes
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "mishatkin", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: mishatkin-nats
+    command:
+      - "--js"
+      - "--jetstream"
+      - "--store-dir=/data/jetstream"
+      - "--max-memory-store=1GB"
+      - "--max-file-store=10GB"
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "nats-server", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: ./api-gateway/Dockerfile
+    container_name: mishatkin-api-gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      GATEWAY_PORT: 8080
+      GATEWAY_JWT_SECRET: ${JWT_SECRET:-mishatkin-secret}
+      GATEWAY_RATE_LIMIT_PER_USER: 100
+      GATEWAY_RATE_LIMIT_PER_IP: 500
+      AUTH_SERVICE_URL: http://auth-service:8081
+      USER_SERVICE_URL: http://user-service:8082
+      DEVICE_SERVICE_URL: http://device-service:8083
+      GLUCOSE_SERVICE_URL: http://glucose-service:8084
+      INSULIN_SERVICE_URL: http://insulin-service:8085
+      DELIVERY_SERVICE_URL: http://delivery-service:8086
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+      HISTORY_SERVICE_URL: http://history-service:8088
+    ports:
+      - "8080:8080"
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./auth-service/Dockerfile
+    container_name: mishatkin-auth-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      AUTH_PORT: 8081
+      AUTH_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+      AUTH_REDIS_URL: redis://:${REDIS_PASSWORD:-mishatkin}@redis:6379
+      AUTH_JWT_SECRET: ${JWT_SECRET:-mishatkin-secret}
+      AUTH_JWT_ACCESS_TTL: 900
+      AUTH_REFRESH_TTL: 604800
+      AUTH_BCRYPT_COST: 12
+    ports:
+      - "8081:8081"
+
+  user-service:
+    build:
+      context: .
+      dockerfile: ./user-service/Dockerfile
+    container_name: mishatkin-user-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      USER_PORT: 8082
+      USER_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+
+  glucose-service:
+    build:
+      context: .
+      dockerfile: ./glucose-service/Dockerfile
+    container_name: mishatkin-glucose-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GLUCOSE_PORT: 8084
+      GLUCOSE_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+      GLUCOSE_HIGH_THRESHOLD: 10.0
+      GLUCOSE_LOW_THRESHOLD: 4.0
+      GLUCOSE_CRITICAL_HIGH: 13.9
+      GLUCOSE_CRITICAL_LOW: 3.0
+
+  insulin-service:
+    build:
+      context: .
+      dockerfile: ./insulin-service/Dockerfile
+    container_name: mishatkin-insulin-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      INSULIN_PORT: 8085
+      INSULIN_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+
+  delivery-service:
+    build:
+      context: .
+      dockerfile: ./delivery-service/Dockerfile
+    container_name: mishatkin-delivery-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DELIVERY_PORT: 8086
+      DELIVERY_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+      DELIVERY_REDIS_URL: redis://:${REDIS_PASSWORD:-mishatkin}@redis:6379
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./notification-service/Dockerfile
+    container_name: mishatkin-notification-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NOTIFICATION_PORT: 8087
+      NOTIFICATION_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+
+  history-service:
+    build:
+      context: .
+      dockerfile: ./history-service/Dockerfile
+    container_name: mishatkin-history-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HISTORY_PORT: 8088
+      HISTORY_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+
+  device-service:
+    build:
+      context: .
+      dockerfile: ./device-service/Dockerfile
+    container_name: mishatkin-device-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DEVICE_PORT: 8083
+      DEVICE_DB_URL: postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+
+volumes:
+  pgdata:

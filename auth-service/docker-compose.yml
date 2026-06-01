@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mishatkin-auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      - AUTH_PORT=8081
+      - AUTH_DB_URL=postgres://mishatkin:${POSTGRES_PASSWORD:-mishatkin}@postgres:5432/mishatkin?sslmode=disable
+      - AUTH_REDIS_URL=redis://:${REDIS_PASSWORD:-mishatkin}@redis:6379
+      - AUTH_JWT_SECRET=${JWT_SECRET:-mishatkin-secret}
+      - AUTH_JWT_ACCESS_TTL=900
+      - AUTH_REFRESH_TTL=604800
+      - AUTH_BCRYPT_COST=12
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
